@@ -1,6 +1,7 @@
 #Built-in Libraries
 import math
 from random import uniform
+from random import randrange
 import argparse
 import os
 import string
@@ -13,24 +14,18 @@ import osr
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.cm as cm
+import Image
 from matplotlib.image import imread
 from mpl_toolkits.basemap import Basemap
-
-
+from osgeo import gdal
 
 #Constants / Globals
 global velocity
+global v2
 global num
 
-INTERVALS = 100000.0
-G = -1.62
-TNOT = 0.0 #Initial Time
-TEND = 1000.0 # End Time
-H = (TEND - TNOT) / INTERVALS
-Z0 = 0 
-
-def create_shapefile(xdata, ydata):
-	output = 'test2.shp'
+def create_shapefile(xdata, ydata, shapefile):
+	output = shapefile[0]
 	driverName = "ESRI Shapefile"
 	drv = ogr.GetDriverByName(driverName)
 	ds = drv.CreateDataSource(output)
@@ -104,34 +99,9 @@ def random_azimuth():
 def strom_multi(xarr,yarr,i):
 	
 	for index in range(len(xarr[i])):
-		v0 = velocity
-		angle = uniform(30, 60) #Setup for a random angle between 30 and 60 deg. 
 		
-		vz0 = v0 * math.sin(angle * math.pi / 180) #Vertical component of the verlocity
-		vx0 = v0 * math.cos(angle * math.pi / 180) #Horiz component of the vel.
-		t = TNOT 
-		z = Z0 
-		v = vz0 
-		
-		#Runge-Kutta Routine ''''''
-		while z >= 0:
-			k1 = H * f(v) #The vertical component of the vel * step size
-			l1 = H * G            
-			k2 = H * f(v + l1 / 2.)
-			l2 = H * G
-			k3 = H * f(v + l2 / 2.)
-			l3 = H * G
-			k4 = H * f(v + l3)
-			l4 = H * G
-			znew = z + (k1 + 2. * (k2 + k3) + k4) / 6.
-			vnew = v + (l1 + 2. * (l2 + l3) + l4) / 6.
-			t = t + H
-			z = znew
-			v = vnew
-	
-			
 		#distance and coordinates
-		distance = t * vx0
+		distance, angle = calc_distance()
 		azimuth = random_azimuth()
 		Xcoordinate = distance * math.sin(azimuth * math.pi/180) #Conversion to radians
 		Ycoordinate = distance * math.cos(azimuth* math.pi/180)
@@ -146,61 +116,129 @@ def strom_multi(xarr,yarr,i):
 		Ycoordinate += yorigin
 		xarr[i][index] = Xcoordinate
 		yarr[i][index] = Ycoordinate
-		
-def stromboli():
+
+def calc_height(distance, angle, g):
+	'''
+	height@x = initital_height + distance(tan(theta)) - ((g(x^2))/(2(v(cos(theta))^2))
+
+	initial_height = 0, a planar surface is fit to some reference elevation.
+	
+	distance is in meters
+	angle is in radians
+	'''
+	trajectory = numpy.linspace(0,distance, distance/100,endpoint=True )
+	elevation = (trajectory * math.tan(angle)) - ((g*(trajectory**2)) / (2*((velocity * math.cos(angle))**2))) 
+	return elevation
+	
+def calc_distance():
+	g = 1.6249
+	angle = uniform(30,60)
+	angle *= math.pi/180 #Convert to radians
+	theta = math.sin(2*angle)
+	distance = (v2 * theta) / g
+	elevation = calc_height(distance, angle, g)
+	return distance, angle, elevation
+	
+def stromboli2():
+	'''distance = (velocity^2*(sin(2theta))) / gravity'''
 	p = 0
 	while p <= num:
 		p+=1
-		v0 = velocity
-		angle = uniform(30, 60) #Setup for a random angle between 30 and 60 deg. 
+		g = 1.6249 #Gravitational acceleration on the moon
 		
-		vz0 = v0 * math.sin(angle * math.pi / 180) #Vertical component of the verlocity
-		vx0 = v0 * math.cos(angle * math.pi / 180) #Horiz component of the vel.
-		t = TNOT 
-		z = Z0 
-		v = vz0 
-		
-		#Runge-Kutta Routine ''''''
-		while z >= 0:
-			k1 = H * f(v) #The vertical component of the vel * step size
-			l1 = H * G            
-			k2 = H * f(v + l1 / 2.)
-			l2 = H * G
-			k3 = H * f(v + l2 / 2.)
-			l3 = H * G
-			k4 = H * f(v + l3)
-			l4 = H * G
-			znew = z + (k1 + 2. * (k2 + k3) + k4) / 6.
-			vnew = v + (l1 + 2. * (l2 + l3) + l4) / 6.
-			t = t + H
-			z = znew
-			v = vnew
-			
 		#distance and coordinates
-		distance = t * vx0
+		#angle = uniform(30, 60)
+		#angle *= math.pi/180 #Convert to radians
+		#theta = math.sin(2*angle)
+		distance, angle, elevation = calc_distance()
 		azimuth = random_azimuth()
 		Xcoordinate = distance * math.sin(azimuth * math.pi/180) #Conversion to radians
 		Ycoordinate = distance * math.cos(azimuth* math.pi/180)
-
 		#The WAC visible spectrum data is 100mpp or 0.003297790480378 degrees / pixel.
 		Xcoordinate /= 100
 		Xcoordinate *= 0.003297790480378
 		Ycoordinate /= 100
 		Ycoordinate *= 0.003297790480378
 		
-		yield Xcoordinate, Ycoordinate, angle, azimuth
+		yield Xcoordinate, Ycoordinate, angle, azimuth, elevation, distance
 		
 		if p > num:
 			done = False
-			yield done
+			yield done		
 
-def density(m, xdata, ydata, shapefile):
-	'''This function converts the lat/lon of the input map to meters assuming an equirectangular projection.
-	It then creates a grid at 100mpp, bins the input data into the grid (density) and creates a 
-	histogram.  Finally, a mesh grid is created and the histogram is plotted in 2D over the basemap.
+def check_topography(dtm, originx, originy, destx, desty, distance,elevation, dev, gtinv):
+	'''
+	This function checks for impact due to variation in topography by 
+	mimicing the functionality of a topographic profile from polyline.
+
+	1. Generate 2 arrays.  One of X coordinates and one of Y coordinates
+	2. Transform these from GCS to PCS
+	3. Create a new array with the elevations extracted from the dtm
+	4. Compare it to the analytical trajectory heights
+	5. If the impact occurs before total potential travel distance, 
+	drop the projectile there.  If not, place it at the total possible 
+	travel distance.
 	
-	If the shapefile flag is set to true a shapefile is created by calling the shapefile function.'''
+	Parameters
+        ----------
+	dtm: A digital terrain model, in 16bit, storing terrain elevation, ndarray
+	originx: The x coord of the projectile launch, scalar
+	originy: The y coord of the projectile launch, scalar
+	destx: The x landing coordinate on a flat plane, scalar
+	desty: The y landing coordinate on a flat plane, scalar
+	distance: The total possible distance traveled, scalar
+	elevation: An array storing heights above 0 of the projectile at some 
+	interval (100m by default)
+	dev: Geotransform parameters
+	gtinv: Inverse geotransform parameters
+
+	Returns
+	-------
+	distance: The new distance the projectile has traveled if it impacts 
+	the topography.
 	
+	'''
+	#Extract the elevation from the dtm along the vector
+	xpt = numpy.linspace(originx,destx,num=distance/100, endpoint=True)
+	ypt = numpy.linspace(originy,desty,num=distance/100, endpoint=True)
+	xpt -= geotransform[0]
+	ypt -= geotransform[3]
+	xsam = numpy.round_((gtinv[1] *xpt + gtinv[2] * ypt), decimals=0)
+	ylin = numpy.round_((gtinv[4] *xpt + gtinv[5] * ypt), decimals=0)
+	dtmvector = dtm[ylin.astype(int),xsam.astype(int)]
+	
+	#Compute elevation of projectile from a plane at the origin height
+	elevation -= abs(dtmvector[0])
+	
+	#Compare the projectile elevation to the dtm
+	elevation = abs(elevation) - dtmvector
+	impact =  numpy.where(elevation <= 0)
+	
+	try:
+		#We are working at 100mpp, so the new distance is index +1
+		return ((impact[0][0])+1) * 100
+	except:
+		pass
+
+def density(m, xdata, ydata, shapefile, ppg):
+	'''
+	This function converts the lat/lon of the input map to meters 
+	assuming an equirectangular projection.  It then creates a grid at 
+	100mpp, bins the input data into the grid  (density) and creates a 
+	histogram.  Finally, a mesh grid is created and the histogram is 
+	plotted in 2D over the basemap.
+	
+	If the shapefile flag is set to true a shapefile is created by calling 
+	the shapefile function.
+
+	Parameters:
+	m: A basemap mapping object
+	xdata: An array of x landing coordinates, ndarray
+	ydata: An array of y landing coordinates, ndarray
+	shapefile: A flag on whether or not to generate a shapefile
+	ppg: The number of meters per grid cell * 100
+	
+	'''
 	#Convert from DD to m to create a mesh grid.
 	xmax = (m.xmax) / 0.003297790480378
 	xmin = (m.xmin) / 0.003297790480378
@@ -208,8 +246,8 @@ def density(m, xdata, ydata, shapefile):
 	ymin = (m.ymin) / 0.003297790480378
 	
 	#Base 100mpp 
-	nx = 1516
-	ny = 2123
+	nx = 1516 / int(ppg)
+	ny = 2123 / int(ppg)
 	
 	#Convert to numpy arrays
 	xdata = numpy.asarray(xdata)
@@ -221,14 +259,14 @@ def density(m, xdata, ydata, shapefile):
 	density, _, _ = numpy.histogram2d(ydata, xdata, [lat_bins, lon_bins])
 
 	#If the user wants a shapefile, pass the numpy arrays
-	if shapefile == True:
+	if shapefile != None:
 		print "Writing model output to a shapefile."
-		create_shapefile(xdata, ydata)
+		create_shapefile(xdata, ydata, shapefile)
 		
 	#Create a grid of equally spaced polygons
 	lon_bins_2d, lat_bins_2d = numpy.meshgrid(lon_bins, lat_bins)
-	if density.max() <= 5:
-		maxden = 10
+	if density.max() <= 3:
+		maxden = 5
 	else: 
 		maxden = density.max()
 
@@ -245,12 +283,14 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Stromboli Ejection Simulation Tool v1')
 	parser.add_argument('velocity', action='store',type=int, help='The veloctiy of particles ejected. Typically around 300.')
 	parser.add_argument('-i', '--iterations', action='store', type=int, dest='i',default=500, help='The number of ejection iterations to perform.')
-	parser.add_argument('--shapefile', action='store_true', default=False, dest='shapefile', help='Use this flag to generate a shapefile, in Moon_2000GCS, of the point data.')
+	parser.add_argument('--shapefile', action='store',nargs=1, default=None, dest='shapefile', help='Use this flag to generate a shapefile, in Moon_2000GCS, of the point data.')
 	parser.add_argument('--fast', action='store_true', default=False, dest='multi', help='Use this flag to forgo creating a visualization and just create a shapefile.  This uses all available processing cores and is substantially faster.')
+	parser.add_argument('--ppg', action='store', default=10, dest='ppg', help='The number of pixels per grid cell.  Default is 10, which generates a 1000m grid square using 100mpp WAC Vis.')
 	args = parser.parse_args()
 	
 	#Assign the user variables to the globals, not great form, but it works.
-	velocity = args.velocity
+	velocity = int(args.velocity)
+	v2 = velocity * velocity
 	num = args.i
 	
 	#If the user wants to process quickly then we omit the visualization and multiprocess to generate a shapefile
@@ -278,7 +318,7 @@ if __name__ == '__main__':
 		#Visualization - setup the plot
 		fig = plt.figure(figsize=(15,10))
 		ax1 = fig.add_subplot(1,2,1)
-		pt, = ax1.plot([], [],'ro')
+		pt, = ax1.plot([], [],'ro', markersize=3)
 		xdata, ydata = [], []
 	
 		#Map
@@ -294,34 +334,43 @@ if __name__ == '__main__':
 		
 		#Read the input image
 		im = imread('wac_clipped2.png')
-		m.imshow(im, origin='upper', cmap=cm.Greys_r)
-	
+		m.imshow(im, origin='upper', cmap=cm.Greys_r, alpha=0.9)
+		
+		#Read the input DTM and get geotransformation info
+		ds = gdal.Open('wac_dtm_int16_clipped.tif')
+		dtm = ds.ReadAsArray()
+		geotransform = ds.GetGeoTransform()
+		dev = (geotransform[1]*geotransform[5] - geotransform[2]*geotransform[4])
+		gtinv = ( geotransform[0] , geotransform[5]/dev, - geotransform[2]/dev, geotransform[3], - geotransform[4]/dev, geotransform[1]/dev)
+				
 		def run(data):
 			if data == False:
-				density(m2,xdata, ydata, args.shapefile)
+				density(m2,xdata, ydata, args.shapefile, args.ppg)
 			else:
-				x,y, angle, azimuth = data
-				xorigin, yorigin = (-97.7328, -30.0906, ) #This is an estimate
-				x += xorigin
-				y += yorigin
-				#Center the ejection origin at the pixel origin
-				#Plot the data
-				xdata.append(x)
-				ydata.append(y)
-				
+				x,y, angle, azimuth, elevation, distance = data
+				rand_index = randrange(0,10)
+				xorigin, yorigin = (xpt[rand_index], ypt[rand_index])
+				xdata.append(x + xorigin)
+				ydata.append(y + yorigin)
+				distance = check_topography(dtm, xorigin, yorigin, x+xorigin, y+yorigin, distance,elevation, dev, gtinv)
+				if distance:
+					x = (distance * math.sin(azimuth * math.pi/180)) + xorigin
+					y = (distance * math.cos(azimuth* math.pi/180)) + yorigin
 				pt.set_data(xdata, ydata)
-				print 'Angle: %f, Azimuth: %f, xCoordinate: %f, yCoordinate: %f' %(angle, azimuth,x,y)
+				print 'Angle: %f, Azimuth: %f, xCoordinate: %f, yCoordinate: %f' %(angle, azimuth,x+xorigin,y+yorigin)
 				return pt,
 		
-		#Plot the volcano in the middle...
-		xpt, ypt = m(-97.7328, -30.0906, ) #This is an estimate
-		plt.plot(xpt, ypt, 'b^', markersize=10)
+		#Plot the volcano as approximated by a linear function.
+		xpt = numpy.linspace(-97.788,-97.855,num=10, endpoint=True)
+		ypt = numpy.linspace(-30.263,-29.851,num=10, endpoint=True)
+		plt.plot(xpt, ypt, 'bo', markersize=4)
 		#Run the animation
-		ani = animation.FuncAnimation(fig, run,stromboli, interval=1, repeat=False, blit=False)
+		ani = animation.FuncAnimation(fig, run,stromboli2, interval=1, repeat=False, blit=False)
 	
 		plt.title('Interactive Deposition')
 		ax2 = fig.add_subplot(1,2,2)
-		ax2.set_title('Impacts / 1000m')
+		gridsize = str(int(args.ppg) * 100)
+		ax2.set_title('Impacts /' + gridsize+ ' m') 
 		
 		#Map
 		lon_min = -101.5
@@ -335,10 +384,6 @@ if __name__ == '__main__':
 		m2.drawparallels(numpy.arange(lat_min,lat_max+1, 0.5), labels=[1,0,0,0])	
 		
 		m2.imshow(im, origin='upper', cmap=cm.Greys_r)
-		
-		#Plot the volcano in the middle...
-		xpt, ypt = m2(-97.7328, -30.0906, ) #This is an estimate
-		plt.plot(xpt, ypt, 'r^', markersize=10)
 		
 		plt.show()
 		
