@@ -1,0 +1,23 @@
+\select@language {english}
+\contentsline {chapter}{\numberline {1}Installing the Strombolian Volcano Simulator}{3}{chapter.1}
+\contentsline {section}{\numberline {1.1}SVS Dependencies}{3}{section.1.1}
+\contentsline {section}{\numberline {1.2}Installing}{3}{section.1.2}
+\contentsline {subsection}{\numberline {1.2.1}Installation on OS X}{3}{subsection.1.2.1}
+\contentsline {subsubsection}{Python}{3}{subsubsection*.3}
+\contentsline {subsubsection}{Numpy}{4}{subsubsection*.4}
+\contentsline {subsubsection}{NumPy, PIL, MatPlotLib}{4}{subsubsection*.5}
+\contentsline {subsubsection}{GDAL \& GDAL Python Bindings}{4}{subsubsection*.6}
+\contentsline {subsubsection}{Basemap}{4}{subsubsection*.7}
+\contentsline {subsection}{\numberline {1.2.2}Installation on Windows}{4}{subsection.1.2.2}
+\contentsline {subsubsection}{NumPy, PIL, Basemap, Matplotlib, GDAL Python Bindings}{4}{subsubsection*.8}
+\contentsline {subsubsection}{GDAL Core}{5}{subsubsection*.9}
+\contentsline {subsection}{\numberline {1.2.3}Installation on Linux}{5}{subsection.1.2.3}
+\contentsline {chapter}{\numberline {2}Using SVS}{7}{chapter.2}
+\contentsline {section}{\numberline {2.1}Usage}{7}{section.2.1}
+\contentsline {subsection}{\numberline {2.1.1}Running the iterative deposition}{7}{subsection.2.1.1}
+\contentsline {subsection}{\numberline {2.1.2}Altering the grid size}{8}{subsection.2.1.2}
+\contentsline {subsection}{\numberline {2.1.3}Writing to a shapefile}{8}{subsection.2.1.3}
+\contentsline {subsection}{\numberline {2.1.4}Combining Arguments}{8}{subsection.2.1.4}
+\contentsline {subsection}{\numberline {2.1.5}Speed}{8}{subsection.2.1.5}
+\contentsline {section}{\numberline {2.2}Location}{8}{section.2.2}
+\contentsline {section}{\numberline {2.3}Ejection Model}{9}{section.2.3}
