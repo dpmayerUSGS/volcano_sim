@@ -1,0 +1,16 @@
+<PAMDataset>
+  <SRS>GEOGCS[&quot;GCS_MOON&quot;,DATUM[&quot;D_MOON&quot;,SPHEROID[&quot;MOON_localRadius&quot;,1737400,0]],PRIMEM[&quot;Reference_Meridian&quot;,0],UNIT[&quot;degree&quot;,0.0174532925199433]]</SRS>
+  <Metadata>
+    <MDI key="DATA_SET_ID">&quot;LRO-L-LROC-5-RDR-V1.0&quot;</MDI>
+    <MDI key="INSTRUMENT_ID">&quot;LROC&quot;</MDI>
+    <MDI key="INSTRUMENT_NAME">&quot;LUNAR RECONNAISSANCE ORBITER CAMERA&quot;</MDI>
+    <MDI key="PRODUCER_INSTITUTION_NAME">&quot;ARIZONA STATE UNIVERSITY&quot;</MDI>
+    <MDI key="PRODUCT_CREATION_TIME">2011-11-12T00:40:13</MDI>
+    <MDI key="PRODUCT_ID">&quot;WAC_GLOBAL_E300S2250_100M&quot;</MDI>
+    <MDI key="PRODUCT_TYPE">&quot;RDR&quot;</MDI>
+    <MDI key="TARGET_NAME">MOON</MDI>
+  </Metadata>
+  <PAMRasterBand band="1">
+    <NoDataValue>-3.40282265508890E+38</NoDataValue>
+  </PAMRasterBand>
+</PAMDataset>
