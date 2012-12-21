@@ -33,3 +33,20 @@ nosetests.xml
 .mr.developer.cfg
 .project
 .pydevproject
+
+# Documentation Source
+Makefile
+source
+build
+html
+latex
+doctrees
+images
+*.rst
+conf.py
+
+# OS X
+.DS_Store
+
+# Packaged Items
+*.zip
