@@ -1,22 +1,24 @@
-.. Lunar Volcano Simulator documentation master file, created by
-   sphinx-quickstart on Fri Dec 21 14:12:56 2012.
+.. Strombolian Eruption Simulation documentation master file, created by
+   sphinx-quickstart on Thu Dec 13 09:45:59 2012.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to Lunar Volcano Simulator's documentation!
-===================================================
+Welcome to Strombolian Eruption Simulation Documentation
+===========================================================
+.. image:: /images/sample.jpg
 
-Contents:
+This model seeks to provide a visualization of a strombolian ejection on the lunar surface.  These are relatively simple models that do not account for the type of ejected material and need not account for atmosphere.
+
+
+
+
+
 
 .. toctree::
    :maxdepth: 2
+   
+   Installation
+   Using
 
 
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
 
