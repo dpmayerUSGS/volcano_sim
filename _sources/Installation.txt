@@ -37,9 +37,19 @@ modules. Prior to installing SVS, you should make sure its dependencies are met.
      
 Note that SVS is not tested with Python 3.x.
 
+Downloading
+============
+SVS is hosted on github.  If you plan on using, but not contributing to the software, simply click this `link to download <https://github.com/jlaura/volcano_sim/archive/master.zip>`_ a .zip file containing SVS.
+
+Conversely, if you are a git user and plan to contribute to the project (via a branch), use git clone.::
+
+   $ git clone git://github.com/jlaura/volcano_sim.git
+   
+   This is a read only view.  You will need to branch the project to make changes.
+
 Installing 
 ==========
-SVS is distributed as a stand alone script and therefore does not require installation.  This documentation is distributed locally, with SVS.  Simply place the script in a convenient directory.
+SVS is distributed as a stand alone script and therefore does not require installation.  Simply place the script in a convenient directory.
 
 Note that SVS does have a number of dependencies.  These facilitate data processing, shapefile output generation, and topographic profile extraction.  They are required and should therefore be installed prior to attempting to run SVS.
 
