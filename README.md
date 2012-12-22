@@ -1,10 +1,6 @@
 Volcano Simulator
 =================
 
-To download the entire directory click ZIP above. Extract.  'cd' into the downloaded directory and run
-    
-    $ python simulation2.py
-    
-or
+Full documentation and download are available at
 
-    $ python simulation2.py --help 
+`jlaura.github/volcano_sim<http://jlaura.github/volcano_sim/>`
