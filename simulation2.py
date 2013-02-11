@@ -216,9 +216,7 @@ def check_topography(dtm, originx, originy, destx, desty, distance,elevation, de
 
 	
 	'''
-	#Extract the elevation from the dtm along the vector
-	#We add 5km to distance as total theoretical distance may be exceeded by
-	#    downward sloping terrain
+	#Convert from GCS to pixel space using a nearest neighbor interpolation
 	xpt = numpy.linspace(originx,destx,num=(distance)/100, endpoint=True)
 	ypt = numpy.linspace(originy,desty,num=(distance)/100, endpoint=True)
 	xpt -= geotransform[0]
@@ -226,7 +224,9 @@ def check_topography(dtm, originx, originy, destx, desty, distance,elevation, de
 	xsam = numpy.round_((gtinv[1] *xpt + gtinv[2] * ypt), decimals=0)
 	ylin = numpy.round_((gtinv[4] *xpt + gtinv[5] * ypt), decimals=0)
 
+
 	try:
+		#Extract the elevation from the dtm along the vector
 		dtmvector = dtm[ylin.astype(int),xsam.astype(int)]
 		#Compute elevation of projectile from a plane at the origin height
 		dtmvectormin = dtmvector.min()
@@ -235,16 +235,18 @@ def check_topography(dtm, originx, originy, destx, desty, distance,elevation, de
 		dtmvector += abs(dtmvectormin)
 		elevation -= dtmvector
 		elevation += dtmvectormin
-		#Ignore the first 2.5km of ejection distance to ensure that we get a valid elevation check.
-		impact =  numpy.where(elevation[250:] <= 0)
+		#Ignore the first 2km of ejection distance to ensure that we get a valid elevation check.
+		impact =  numpy.where(elevation[200:] <= 0)
 		try:
 			#We are working at 100mpp, so the new distance is index +1
+			#print elevation
 			return ((impact[0][0])+1) * 100, True
 		except:
 			print "The particle does not have sufficient angle to escape."
-			return 0,True
+			#print elevation
 	except:
 		print "Total distance travel exceeds model dimensions."
+		return None, True
 
 
 def density(m, xdata, ydata, shapefile, ppg):
@@ -395,31 +397,34 @@ if __name__ == '__main__':
 				#Randomly select the origin point along the linear vent
 				xorigin, yorigin = (xpt[rand_index], ypt[rand_index])
 				distance = check_topography(dtm, xorigin, yorigin, x+xorigin, y+yorigin, distance,elevation, dev, gtinv)
-				if distance[1] == True:
-					x = (distance[0] * math.sin(azimuth * math.pi/180))
-					y = (distance[0] * math.cos(azimuth* math.pi/180))
-
-					#Convert back to degrees
-					x /= 100
-					x *= 0.003297790480378
-					y /= 100
-					y *= 0.003297790480378
-					xdata.append(x + xorigin)
-					ydata.append(y + yorigin)
-					pt.set_data(xdata, ydata)
-				else:
-					print 'Particle landed at the maximum theoretical distance.'
-					#Convert back to degrees
-					x /= 100
-					x *= 0.003297790480378
-					y /= 100
-					y *= 0.003297790480378
-					xdatamax.append(x + xorigin)
-					ydatamax.append(y + yorigin)
-					#Set the point
-					ptmax.set_data(xdatamax, ydatamax)
-				print 'Angle: %f, Azimuth: %f, xCoordinate: %f, yCoordinate: %f' %(angle, azimuth,x+xorigin,y+yorigin)
-				return pt,
+				try:
+					if distance[1] == True:
+						x = (distance[0] * math.sin(azimuth * math.pi/180))
+						y = (distance[0] * math.cos(azimuth* math.pi/180))
+	
+						#Convert back to degrees
+						x /= 100
+						x *= 0.003297790480378
+						y /= 100
+						y *= 0.003297790480378
+						xdata.append(x + xorigin)
+						ydata.append(y + yorigin)
+						pt.set_data(xdata, ydata)
+					else:
+						print 'Particle landed at the maximum theoretical distance.'
+						#Convert back to degrees
+						x /= 100
+						x *= 0.003297790480378
+						y /= 100
+						y *= 0.003297790480378
+						xdatamax.append(x + xorigin)
+						ydatamax.append(y + yorigin)
+						#Set the point
+						ptmax.set_data(xdatamax, ydatamax)
+					print 'Angle: %f, Azimuth: %f, xCoordinate: %f, yCoordinate: %f' %(angle, azimuth,x+xorigin,y+yorigin)
+					return pt,
+				except:
+					pass
 		
 		#Plot the volcano as approximated by a linear function.
 		plt.plot(xpt, ypt, 'bo', markersize=4)
