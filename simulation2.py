@@ -4,19 +4,15 @@ from random import uniform
 from random import randrange
 import argparse
 import os
-import string
 import ctypes
+
+import multiprocessing
 
 #external libraries
 import numpy
+import affine
 import ogr
 import osr
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import matplotlib.cm as cm
-import Image
-from matplotlib.image import imread
-from mpl_toolkits.basemap import Basemap
 from osgeo import gdal
 
 #Constants / Globals
@@ -24,8 +20,23 @@ global velocity
 global angle
 global num
 
+def parse_args():
+	parser = argparse.ArgumentParser(description='Stromboli Ejection Simulation Tool v1')
+	parser.add_argument('--velocity', '-v', action='store',nargs='+',default=[350,425], dest='velocity', help='A range of ejection velocities. ')
+	parser.add_argument('--angle','-a', action='store', nargs='+',default=[30, 60], dest='angle', help='Optional: A range of ejection angles.  Example: -a 30 60')
+	parser.add_argument('-i', '--iterations', action='store', type=int, dest='i',default=500, help='The number of ejection iterations to perform.')
+	parser.add_argument('--ppg', action='store', default=10, dest='ppg', help='The number of pixels per grid cell.  Default is 10, which generates a 1000m grid square using 100mpp WAC Vis.')
+	parser.add_argument('-c', '--ncores', default=0, type=int, help='The number of CPUs to use for the simulation.')
+	parser.add_argument('-n', '--nsteps', default=10, type=int, help='The number of steps to subset the x/y extents into for the purposes of moving the ejection point.')
+	parser.add_argument(dest='xextent', nargs=2, type=float, help='The xextent in the form (xmin, xmax)')
+	parser.add_argument(dest='yextent', nargs=2, type=float, help='The yextent in the form (ymin, ymax)')
+	parser.add_argument(dest='dtm', help='The DTM to be used for intersection')
+	parser.add_argument(dest='shapefile', help='Name of the output shapefile')
+
+	return parser.parse_args()
+
 def create_shapefile(xdata, ydata, shapefile):
-	output = shapefile[0]
+	output = shapefile
 	driverName = "ESRI Shapefile"
 	drv = ogr.GetDriverByName(driverName)
 	ds = drv.CreateDataSource(output)
@@ -86,25 +97,21 @@ def init(xarr_, yarr_):
 	xarr = xarr_
 	yarr = yarr_
 
-def f(v):
-	f = v
-	return f #Using return at the end of a def statement passes the variable back to the calling function.
-
 def random_azimuth():
-	'''This function returns a random floating point number between 1 and 360'''
+	'''This function returns a random floating point number between 0 and 2pi'''
 	#use normalvariate(mean, std) for a gaussian distribution
 	#A more complex weighting can be achieved, but would need to be modeled.
-	return uniform(0,360)
+	return uniform(0,2*math.pi)
 
-def strom_multi(xarr,yarr,i):
+def strom_multi(xarr,yarr,i, nsteps):
 	
 	for index in range(len(xarr[i])):
 		
 		#distance and coordinates
 		distance, angle, elevation = calc_distance()
 		azimuth = random_azimuth()
-		Xcoordinate = distance * math.sin(azimuth * math.pi/180) #Conversion to radians
-		Ycoordinate = distance * math.cos(azimuth* math.pi/180)
+		Xcoordinate = distance * math.sin(azimuth) #Conversion to radians
+		Ycoordinate = distance * math.cos(azimuth)
 
 		#The WAC visible spectrum data is 100mpp or 0.003297790480378 degrees / pixel.
 		Xcoordinate /= 100
@@ -114,10 +121,10 @@ def strom_multi(xarr,yarr,i):
 		x = float(Xcoordinate)
 		y = float(Ycoordinate)
 		#Randomly select the origin point along the linear vent
-		rand_index = randrange(0,10)
+		rand_index = randrange(0,nsteps)
 		xorigin, yorigin = (xpt[rand_index], ypt[rand_index])
-		distance = check_topography(dtm, xorigin, yorigin, x+xorigin, y+yorigin, distance,elevation, dev, gtinv)
-
+		#distance = check_topography(dtm, xorigin, yorigin, x+xorigin, y+yorigin, distance,elevation, dev, gtinv)
+		distance = (0,False)
 		if distance[1] == True:
 			x = (distance[0] * math.sin(azimuth * math.pi/180))
 			y = (distance[0] * math.cos(azimuth* math.pi/180))
@@ -158,30 +165,7 @@ def calc_distance():
 	distance = (v2 * theta) / g
 	#Calculate the elevation over a planar surface
 	elevation = calc_height(distance, ejectionangle, g, ejectionvelocity)
-	return distance, ejectionangle, elevation
-	
-def stromboli2():
-	'''distance = (velocity^2*(sin(2theta))) / gravity'''
-	p = 0
-	while p <= num:
-		p+=1
-		g = 1.6249 #Gravitational acceleration on the moon
-		
-		distance, angle, elevation = calc_distance()
-		azimuth = random_azimuth()
-		Xcoordinate = distance * math.sin(azimuth * math.pi/180) #Conversion to radians
-		Ycoordinate = distance * math.cos(azimuth* math.pi/180)
-		#The WAC visible spectrum data is 100mpp or 0.003297790480378 degrees / pixel.
-		Xcoordinate /= 100
-		Xcoordinate *= 0.003297790480378
-		Ycoordinate /= 100
-		Ycoordinate *= 0.003297790480378
-		
-		yield Xcoordinate, Ycoordinate, angle, azimuth, elevation, distance
-		
-		if p > num:
-			done = False
-			yield done		
+	return distance, ejectionangle, elevation	
 
 def check_topography(dtm, originx, originy, destx, desty, distance,elevation, dev, gtinv):
 	'''
@@ -224,100 +208,35 @@ def check_topography(dtm, originx, originy, destx, desty, distance,elevation, de
 	xsam = numpy.round_((gtinv[1] *xpt + gtinv[2] * ypt), decimals=0)
 	ylin = numpy.round_((gtinv[4] *xpt + gtinv[5] * ypt), decimals=0)
 
+	#Extract the elevation from the dtm along the vector
+	dtmvector = dtm[ylin.astype(int),xsam.astype(int)]
 
+	#Compute elevation of projectile from a plane at the origin height
+	dtmvectormin = dtmvector.min()
+	elevation -= abs(dtmvector[0])
+
+	#Compare the projectile elevation to the dtm
+	dtmvector += abs(dtmvectormin)
+	elevation -= dtmvector
+	elevation += dtmvectormin
+
+	#Ignore the first 2km of ejection distance to ensure that we get a valid elevation check.
+	impact =  numpy.where(elevation[200:] <= 0)
 	try:
-		#Extract the elevation from the dtm along the vector
-		dtmvector = dtm[ylin.astype(int),xsam.astype(int)]
-		#Compute elevation of projectile from a plane at the origin height
-		dtmvectormin = dtmvector.min()
-		elevation -= abs(dtmvector[0])
-		#Compare the projectile elevation to the dtm
-		dtmvector += abs(dtmvectormin)
-		elevation -= dtmvector
-		elevation += dtmvectormin
-		#Ignore the first 2km of ejection distance to ensure that we get a valid elevation check.
-		impact =  numpy.where(elevation[200:] <= 0)
-		try:
-			#We are working at 100mpp, so the new distance is index +1
-			#print elevation
-			return ((impact[0][0])+1) * 100, True
-		except:
-			print "The particle does not have sufficient angle to escape."
-			#print elevation
+		#We are working at 100mpp, so the new distance is index +1
+		#print elevation
+		return ((impact[0][0])+1) * 100, True
 	except:
-		print "Total distance travel exceeds model dimensions."
-		return None, True
-
-
-def density(m, xdata, ydata, shapefile, ppg):
-	'''
-	This function converts the lat/lon of the input map to meters 
-	assuming an equirectangular projection.  It then creates a grid at 
-	100mpp, bins the input data into the grid  (density) and creates a 
-	histogram.  Finally, a mesh grid is created and the histogram is 
-	plotted in 2D over the basemap.
-	
-	If the shapefile flag is set to true a shapefile is created by calling 
-	the shapefile function.
-
-	Parameters:
-	m: A basemap mapping object
-	xdata: An array of x landing coordinates, ndarray
-	ydata: An array of y landing coordinates, ndarray
-	shapefile: A flag on whether or not to generate a shapefile
-	ppg: The number of meters per grid cell * 100
-	
-	'''
-	#Convert from DD to m to create a mesh grid.
-	xmax = (m.xmax) / 0.003297790480378
-	xmin = (m.xmin) / 0.003297790480378
-	ymax = (m.ymax) / 0.003297790480378
-	ymin = (m.ymin) / 0.003297790480378
-	
-	#Base 100mpp 
-	nx = 1516 / int(ppg)
-	ny = 2123 / int(ppg)
-	
-	#Convert to numpy arrays
-	xdata = numpy.asarray(xdata)
-	ydata = numpy.asarray(ydata)
-	
-	#Bin the data & calculate the density
-	lon_bins = numpy.linspace(xdata.min(), xdata.max(), nx+1)
-	lat_bins = numpy.linspace(ydata.min(), ydata.max(), ny+1)
-	density, _, _ = numpy.histogram2d(ydata, xdata, [lat_bins, lon_bins])
-
-	#If the user wants a shapefile, pass the numpy arrays
-	if shapefile != None:
-		print "Writing model output to a shapefile."
-		create_shapefile(xdata, ydata, shapefile)
-		
-	#Create a grid of equally spaced polygons
-	lon_bins_2d, lat_bins_2d = numpy.meshgrid(lon_bins, lat_bins)
-	if density.max() <= 3:
-		maxden = 5
-	else: 
-		maxden = density.max()
-
-	#Mask the density array so that 0 is not plotted
-	density = numpy.ma.masked_where(density <=0, density)
-	
-	plt.pcolormesh(lon_bins_2d,lat_bins_2d, density, cmap=cm.RdYlGn_r, vmin=0, vmax=maxden, alpha=0.5)
-	plt.colorbar(orientation='horizontal')
+		print("The particle does not have sufficient angle to escape.")
+		#print elevation
+	#except:
+	#	print("Total distance travel exceeds model dimensions.")
+	#	return None, True
 
 if __name__ == '__main__': 
 	'''This is the main section which handles program flow.'''
-	
-	#Parse all of the arguments.
-	parser = argparse.ArgumentParser(description='Stromboli Ejection Simulation Tool v1')
-	parser.add_argument('--velocity', '-v', action='store',nargs='+',default=[350,425], dest='velocity', help='A range of ejection velocities. ')
-	parser.add_argument('--angle','-a', action='store', nargs='+',default=[30, 60], dest='angle', help='Optional: A range of ejection angles.  Example: -a 30 60')
-	parser.add_argument('-i', '--iterations', action='store', type=int, dest='i',default=500, help='The number of ejection iterations to perform.')
-	parser.add_argument('--shapefile', action='store',nargs=1, default=None, dest='shapefile', help='Use this flag to generate a shapefile, in Moon_2000GCS, of the point data.')
-	parser.add_argument('--fast', action='store', default=None, nargs=1, dest='multi', help='Use this flag to forgo creating a visualization and just create a shapefile.  This uses all available processing cores and is substantially faster.')
-	parser.add_argument('--ppg', action='store', default=10, dest='ppg', help='The number of pixels per grid cell.  Default is 10, which generates a 1000m grid square using 100mpp WAC Vis.')
-	args = parser.parse_args()
-	
+	args = parse_args()
+
 	#Assign the user variables to the globals, not great form, but it works.
 	try:
 		velocity = [float(args.velocity[0]),float(args.velocity[1])]
@@ -330,124 +249,44 @@ if __name__ == '__main__':
 		angle = [float(args.angle[0]),float(args.angle[0])]
 		
 	#Read the input DTM and get geotransformation info
-	ds = gdal.Open('wac_dtm.tif')
+	ds = gdal.Open(args.dtm)
 	dtm = ds.ReadAsArray()
 	geotransform = ds.GetGeoTransform()
 	dev = (geotransform[1]*geotransform[5] - geotransform[2]*geotransform[4])
 	gtinv = ( geotransform[0] , geotransform[5]/dev, - geotransform[2]/dev, geotransform[3], - geotransform[4]/dev, geotransform[1]/dev)
 	
+	xmin, xmax = args.xextent
+	ymin, ymax = args.yextent
+
 	#Set the approximate ejection coordinates
-	xpt = numpy.linspace(-97.788,-97.855,num=10, endpoint=True)
-	ypt = numpy.linspace(-30.263,-29.851,num=10, endpoint=True)
-	
+	xpt = numpy.linspace(xmin, xmax, num=args.nsteps, endpoint=True)
+	ypt = numpy.linspace(ymin, ymax, num=args.nsteps, endpoint=True)
+
 	#If the user wants to process quickly then we omit the visualization and multiprocess to generate a shapefile
-	if args.multi is not None:
-		import multiprocessing
+	cores = args.ncores
+	if cores == 0:
 		cores = multiprocessing.cpu_count()
-		cores *= 2
-		step = num // cores
-		xarray = numpy.frombuffer(multiprocessing.RawArray(ctypes.c_double, num))
-		yarray = numpy.frombuffer(multiprocessing.RawArray(ctypes.c_double, num))
-		init(xarray,yarray)
-		jobs = []
-		for i in range(0, num+1, step):
-			p = multiprocessing.Process(target=strom_multi, args=(xarr,yarr,slice(i, i+step)), )
-			jobs.append(p)
-		for job in jobs:
-			job.start()
-		for job in jobs:
-			job.join()
-			
-		create_shapefile(xarr, yarr, args.multi)
+	cores *= 2
+	step = num // cores
+
+	# Generate the shared memory space and get it pushed into the global namespace
+	xarray = numpy.frombuffer(multiprocessing.RawArray(ctypes.c_double, num))
+	yarray = numpy.frombuffer(multiprocessing.RawArray(ctypes.c_double, num))
+	init(xarray,yarray)
+
+	jobs = []
+	for i in range(0, num+1, step):
+		p = multiprocessing.Process(target=strom_multi, args=(xarr,yarr,slice(i, i+step), args.nsteps), )
+		jobs.append(p)
+	for job in jobs:
+		job.start()
+	for job in jobs:
+		job.join()
+
+	create_shapefile(xarr, yarr, args.shapefile)
 	
 
-	else:
-		#Visualization - setup the plot
-		fig = plt.figure(figsize=(15,10))
-		ax1 = fig.add_subplot(1,2,1)
-		#Points that hit underlying topography
-		pt, = ax1.plot([], [],'co', markersize=3)
-		xdata, ydata = [], []
-		#Points that travel the total theoretical distance
-		ptmax,  = ax1.plot([],[], 'yo', markersize=3)
-		datamax, ydatamax = [],[]
-	
-		#Map
-		lon_min = -102.5
-		lon_max = -93.5
-		lat_min = -34.5
-		lat_max = -25.5
-	
-		m = Basemap(projection='cyl',llcrnrlat=lat_min,urcrnrlat=lat_max,
-		    llcrnrlon=lon_min,urcrnrlon=lon_max,resolution=None, rsphere=(1737400.0,1737400.0))
-		m.drawmeridians(numpy.arange(lon_min+0.5, lon_max+1, 1), labels=[0,0,0,1], fontsize=10)
-		m.drawparallels(numpy.arange(lat_min+0.5,lat_max+1, 1), labels=[1,0,0,0], fontsize=10)
-		
-		#Read the input image
-		im = imread('wac_global_vis.png')
-		m.imshow(im, origin='upper', cmap=cm.Greys_r, alpha=0.9)
-				
-		def run(data):
-			if data == False:
-				density(m2,xdata, ydata, args.shapefile, args.ppg)
-			else:
-				#x, y are in degrees from the false origin 0,0
-				x,y, angle, azimuth, elevation, distance = data
-				rand_index = randrange(0,10)
-				#Randomly select the origin point along the linear vent
-				xorigin, yorigin = (xpt[rand_index], ypt[rand_index])
-				distance = check_topography(dtm, xorigin, yorigin, x+xorigin, y+yorigin, distance,elevation, dev, gtinv)
-				try:
-					if distance[1] == True:
-						x = (distance[0] * math.sin(azimuth * math.pi/180))
-						y = (distance[0] * math.cos(azimuth* math.pi/180))
-	
-						#Convert back to degrees
-						x /= 100
-						x *= 0.003297790480378
-						y /= 100
-						y *= 0.003297790480378
-						xdata.append(x + xorigin)
-						ydata.append(y + yorigin)
-						pt.set_data(xdata, ydata)
-					else:
-						print 'Particle landed at the maximum theoretical distance.'
-						#Convert back to degrees
-						x /= 100
-						x *= 0.003297790480378
-						y /= 100
-						y *= 0.003297790480378
-						xdatamax.append(x + xorigin)
-						ydatamax.append(y + yorigin)
-						#Set the point
-						ptmax.set_data(xdatamax, ydatamax)
-					print 'Angle: %f, Azimuth: %f, xCoordinate: %f, yCoordinate: %f' %(angle, azimuth,x+xorigin,y+yorigin)
-					return pt,
-				except:
-					pass
-		
-		#Plot the volcano as approximated by a linear function.
-		plt.plot(xpt, ypt, 'bo', markersize=4)
-		#Run the animation
-		ani = animation.FuncAnimation(fig, run,stromboli2, interval=1, repeat=False, blit=False)
-	
-		plt.title('Sample Deposition Using ' + (str(num+2)) + " Points")
-		ax2 = fig.add_subplot(1,2,2)
-		gridsize = str(int(args.ppg) * 100)
-		ax2.set_title('Impacts /' + gridsize + ' m') 
-		
-		m2 = Basemap(projection='cyl',llcrnrlat=lat_min,urcrnrlat=lat_max,
-		    llcrnrlon=lon_min,urcrnrlon=lon_max,resolution=None, rsphere=(1737400.0,1737400.0))
-		m.drawmeridians(numpy.arange(lon_min+0.5, lon_max+1, 1), labels=[0,0,0,1], fontsize=10)
-		m.drawparallels(numpy.arange(lat_min+0.5,lat_max+1, 1), labels=[1,0,0,0], fontsize=10)	
-		
-		m2.imshow(im, origin='upper', cmap=cm.Greys_r)
-		
-		plt.show()
-		
-		#Save the animation 
-		#ani.save('simulation.mp4', fps=10)
-	
+
 	
 
 
