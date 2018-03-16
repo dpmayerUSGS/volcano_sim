@@ -101,7 +101,7 @@ def random_azimuth():
 	'''This function returns a random floating point number between 0 and 2pi'''
 	#use normalvariate(mean, std) for a gaussian distribution
 	#A more complex weighting can be achieved, but would need to be modeled.
-	return uniform(0,2*math.pi)
+	return uniform(1, 360)
 
 def strom_multi(xarr,yarr,i, nsteps):
 	
@@ -110,14 +110,13 @@ def strom_multi(xarr,yarr,i, nsteps):
 		#distance and coordinates
 		distance, angle, elevation = calc_distance()
 		azimuth = random_azimuth()
-		Xcoordinate = distance * math.sin(azimuth) #Conversion to radians
-		Ycoordinate = distance * math.cos(azimuth)
-
+		Xcoordinate = distance * math.sin(azimuth* math.pi/180) #Conversion to radians
+		Ycoordinate = distance * math.cos(azimuth* math.pi/180)
 		#The WAC visible spectrum data is 100mpp or 0.003297790480378 degrees / pixel.
-		Xcoordinate /= 100
-		Xcoordinate *= 0.003297790480378
-		Ycoordinate /= 100
-		Ycoordinate *= 0.003297790480378
+		Xcoordinate /= pixel_res#100
+		Xcoordinate *= angular_units#0.003297790480378
+		Ycoordinate /= pixel_res#100
+		Ycoordinate *= angular_units#0.003297790480378
 		x = float(Xcoordinate)
 		y = float(Ycoordinate)
 		#Randomly select the origin point along the linear vent
@@ -129,11 +128,10 @@ def strom_multi(xarr,yarr,i, nsteps):
 			x = (distance[0] * math.sin(azimuth * math.pi/180))
 			y = (distance[0] * math.cos(azimuth* math.pi/180))
 			#Convert back to degrees
-			x /= 100
-			x *= 0.003297790480378
-			y /= 100
-			y *= 0.003297790480378
-			
+			x /= pixel_res#100
+			x *= angular_units#0.003297790480378
+			y /= pixel_res#100
+			y *= angular_units#0.003297790480378
 		else:
 			pass
 		xarr[i][index] = x+xorigin
@@ -163,6 +161,8 @@ def calc_distance():
 	v2 = ejectionvelocity * ejectionvelocity
 	#Calculate total theoretical travel distance
 	distance = (v2 * theta) / g
+	if distance > velocity[1]**2 / g:
+		print('Impossible Distance...')
 	#Calculate the elevation over a planar surface
 	elevation = calc_height(distance, ejectionangle, g, ejectionvelocity)
 	return distance, ejectionangle, elevation	
@@ -250,9 +250,16 @@ if __name__ == '__main__':
 		
 	#Read the input DTM and get geotransformation info
 	ds = gdal.Open(args.dtm)
+	info = gdal.Info(args.dtm, format='json')
+	ref = osr.SpatialReference()
+	ref.ImportFromWkt(info['coordinateSystem']['wkt'])
+	angular_units = ref.GetAngularUnits()
+	
+
 	dtm = ds.ReadAsArray()
 	geotransform = ds.GetGeoTransform()
 	dev = (geotransform[1]*geotransform[5] - geotransform[2]*geotransform[4])
+	pixel_res = geotransform[1]  # Assumes square!
 	gtinv = ( geotransform[0] , geotransform[5]/dev, - geotransform[2]/dev, geotransform[3], - geotransform[4]/dev, geotransform[1]/dev)
 	
 	xmin, xmax = args.xextent
@@ -282,7 +289,6 @@ if __name__ == '__main__':
 		job.start()
 	for job in jobs:
 		job.join()
-
 	create_shapefile(xarr, yarr, args.shapefile)
 	
 
